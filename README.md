@@ -314,7 +314,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <div align="center">
 
-**[agent-financial-analyst](https://github.com/daniellopez882/agent-financial-analyst)** by [Daniel López Orta](https://github.com/daniellopez882)
+**[agent-financial-analyst](https://github.com/daniellopez882/agent-financial-analyst)** by [Ismail Sajid](https://github.com/Ismail-2001/)
 
 *Five agents. One report. Zero terminal fees.*
 
