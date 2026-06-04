@@ -58,7 +58,10 @@ export default function App() {
     try {
       const response = await fetch(`${API_BASE}/analyze`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+              'Content-Type': 'application/json',
+              'X-API-Key': 'analyst_pro_dev_key_2026'
+          },
           body: JSON.stringify({ ticker })
       });
       
@@ -73,7 +76,9 @@ export default function App() {
       while (!completed) {
         await new Promise(r => setTimeout(r, 1500)); // Poll every 1.5 seconds
         
-        const pollResponse = await fetch(`${API_BASE}/jobs/${jobId}`);
+        const pollResponse = await fetch(`${API_BASE}/jobs/${jobId}`, {
+            headers: { 'X-API-Key': 'analyst_pro_dev_key_2026' }
+        });
         if (!pollResponse.ok) throw new Error("Failed to fetch research status updates");
         
         const jobData = await pollResponse.json();

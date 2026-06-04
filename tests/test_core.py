@@ -284,6 +284,7 @@ class TestSECRetriever:
 
 class TestAPIAsyncJob:
     def test_health_check(self):
+        # Health check is public
         from fastapi.testclient import TestClient
         from agent_financial_analyst.api.main import app
         client = TestClient(app)
@@ -291,17 +292,46 @@ class TestAPIAsyncJob:
         assert response.status_code == 200
         assert response.json() == {"status": "healthy"}
 
-    def test_job_submission_and_not_found(self):
+    def test_unauthorized_missing_key(self):
         from fastapi.testclient import TestClient
         from agent_financial_analyst.api.main import app
         client = TestClient(app)
         
-        # Test 404
-        response = client.get("/jobs/non-existent-uuid")
+        # /analyze should fail with 401
+        response = client.post("/analyze", json={"ticker": "AAPL"})
+        assert response.status_code == 401
+        
+        # /jobs should fail with 401
+        response = client.get("/jobs/some-id")
+        assert response.status_code == 401
+
+    def test_unauthorized_invalid_key(self):
+        from fastapi.testclient import TestClient
+        from agent_financial_analyst.api.main import app
+        client = TestClient(app)
+        headers = {"X-API-Key": "wrong-key"}
+        
+        # /analyze should fail with 401
+        response = client.post("/analyze", json={"ticker": "AAPL"}, headers=headers)
+        assert response.status_code == 401
+        assert "Invalid API Key" in response.json()["detail"]
+        
+        # /jobs should fail with 401
+        response = client.get("/jobs/some-id", headers=headers)
+        assert response.status_code == 401
+
+    def test_authorized_job_submission_and_not_found(self):
+        from fastapi.testclient import TestClient
+        from agent_financial_analyst.api.main import app
+        client = TestClient(app)
+        headers = {"X-API-Key": "analyst_pro_dev_key_2026"}
+        
+        # Test 404 with valid API Key
+        response = client.get("/jobs/non-existent-uuid", headers=headers)
         assert response.status_code == 404
         
-        # Test 202 job submission
-        response = client.post("/analyze", json={"ticker": "AAPL"})
+        # Test 202 job submission with valid API Key
+        response = client.post("/analyze", json={"ticker": "AAPL"}, headers=headers)
         assert response.status_code == 202
         data = response.json()
         assert "job_id" in data

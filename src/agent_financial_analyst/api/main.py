@@ -8,8 +8,9 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Security, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -26,8 +27,13 @@ setup_logging(level="INFO")
 # Context var for tracking current job logging session
 job_id_var = contextvars.ContextVar("job_id", default=None)
 
+# Custom rate-limiting resolver partition per API Key
+def get_limit_key(request: Request) -> str:
+    key = request.headers.get("X-API-Key")
+    return f"key:{key}" if key else f"ip:{get_remote_address(request)}"
+
 # Initialize Rate Limiter
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_limit_key)
 app = FastAPI(
     title="Agent Financial Analyst API",
     description="FAANG-level institutional equity research as a service.",
@@ -35,6 +41,23 @@ app = FastAPI(
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Header scheme configuration
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+ALLOWED_API_KEYS = set(os.environ.get("ALLOWED_API_KEYS", "analyst_pro_dev_key_2026").split(","))
+
+def verify_api_key(api_key: Optional[str] = Depends(api_key_header)):
+    if not api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication credentials missing in X-API-Key header"
+        )
+    if api_key not in ALLOWED_API_KEYS:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API Key"
+        )
+    return api_key
 
 # CORS for frontend integration
 app.add_middleware(
@@ -103,7 +126,12 @@ async def run_analysis_job(job_id: str, ticker: str):
 
 @app.post("/analyze", response_model=JobStatus, status_code=202)
 @limiter.limit("5/minute")
-async def analyze_stock(payload: ResearchRequest, request: Request, background_tasks: BackgroundTasks):
+async def analyze_stock(
+    payload: ResearchRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    api_key: str = Depends(verify_api_key)
+):
     """
     Kicks off a full multi-agent institutional research report for the 
     specified stock ticker asynchronously.
@@ -128,7 +156,7 @@ async def analyze_stock(payload: ResearchRequest, request: Request, background_t
 
 
 @app.get("/jobs/{job_id}", response_model=JobStatus)
-def get_job_status(job_id: str):
+def get_job_status(job_id: str, api_key: str = Depends(verify_api_key)):
     """Retrieve current logs and execution progress for a queued job."""
     if job_id not in JOBS_DB:
         raise HTTPException(status_code=404, detail="Job not found")
