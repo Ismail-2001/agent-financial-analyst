@@ -1,5 +1,8 @@
 """Comprehensive tests for agent-financial-analyst."""
 
+import os
+os.environ["OPENAI_API_KEY"] = "mock-key-for-unit-testing"
+
 import json
 from pathlib import Path
 
@@ -273,4 +276,37 @@ class TestSECRetriever:
         assert len(filings) == 1
         assert filings[0]["type"] in ("10-K", "10-Q")
         assert "sec.gov" in filings[0]["url"]
+
+
+# ─────────────────────────────────────────────
+# API Async Background Job Tests
+# ─────────────────────────────────────────────
+
+class TestAPIAsyncJob:
+    def test_health_check(self):
+        from fastapi.testclient import TestClient
+        from agent_financial_analyst.api.main import app
+        client = TestClient(app)
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "healthy"}
+
+    def test_job_submission_and_not_found(self):
+        from fastapi.testclient import TestClient
+        from agent_financial_analyst.api.main import app
+        client = TestClient(app)
+        
+        # Test 404
+        response = client.get("/jobs/non-existent-uuid")
+        assert response.status_code == 404
+        
+        # Test 202 job submission
+        response = client.post("/analyze", json={"ticker": "AAPL"})
+        assert response.status_code == 202
+        data = response.json()
+        assert "job_id" in data
+        assert data["status"] == "pending"
+        assert data["ticker"] == "AAPL"
+        assert len(data["logs"]) > 0
+
 

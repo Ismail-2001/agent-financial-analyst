@@ -53,27 +53,41 @@ export default function App() {
     
     setLoading(true);
     setReport(null);
-    setLogs(["Initializing deep research sequence...", `Connecting to MarketData API for ${ticker}...`]);
+    setLogs(["Submitting research request to AnalystPro cluster..."]);
     
     try {
-      // Small delay simulation to show logs if API is too fast
-      await new Promise(r => setTimeout(r, 1000));
-      addLog("Fetching fundamentals & technical indicators...");
-      
       const response = await fetch(`${API_BASE}/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ticker })
       });
       
-      if (!response.ok) throw new Error("Failed to generate report");
+      if (!response.ok) throw new Error("Failed to initialize report generation");
       
-      const data = await response.json();
-      addLog("Synthesizing final executive verdict...");
-      setReport(data);
-      addLog("Report generation complete.");
+      const initData = await response.json();
+      const jobId = initData.job_id;
+      setLogs(initData.logs);
+      
+      let completed = false;
+      
+      while (!completed) {
+        await new Promise(r => setTimeout(r, 1500)); // Poll every 1.5 seconds
+        
+        const pollResponse = await fetch(`${API_BASE}/jobs/${jobId}`);
+        if (!pollResponse.ok) throw new Error("Failed to fetch research status updates");
+        
+        const jobData = await pollResponse.json();
+        setLogs(jobData.logs);
+        
+        if (jobData.status === "completed") {
+          setReport(jobData.result);
+          completed = true;
+        } else if (jobData.status === "failed") {
+          throw new Error(jobData.error || "Execution failed in the agent cluster.");
+        }
+      }
     } catch (error) {
-      addLog(`Error: ${error instanceof Error ? error.message : "Network failure"}`);
+      setLogs(prev => [...prev, `[ERROR] ${error instanceof Error ? error.message : "Network failure"}`]);
     } finally {
       setLoading(false);
     }
