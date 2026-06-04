@@ -1,4 +1,9 @@
-"""Core data models for agent-financial-analyst."""
+"""Core data models for agent-financial-analyst.
+
+DEPRECATION WARNING: This module contains legacy dataclass models. 
+New code should use the modernized Pydantic V2 models in `schema/models.py`.
+Kept for backward compatibility and legacy CLI tools (summary, fundamentals, etc.).
+"""
 
 from __future__ import annotations
 

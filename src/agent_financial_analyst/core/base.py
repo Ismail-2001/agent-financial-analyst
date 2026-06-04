@@ -38,6 +38,7 @@ class BaseAgent(ABC):
         self.model = model
         self.client = AsyncOpenAI()
         self.thoughts: List[AgentThought] = []
+        self.last_output: AgentOutput | None = None
 
     @abstractmethod
     def get_system_prompt(self, context: Dict[str, Any]) -> str:
@@ -80,6 +81,7 @@ class BaseAgent(ABC):
                 cost_usd=cost,
                 thoughts=self.thoughts,
             )
+            self.last_output = output
             
             logger.info(f"[{self.agent_id}] Completed in {latency_ms/1000:.2f}s | Cost: ${cost:.4f}")
             

@@ -252,3 +252,25 @@ class TestRiskFactor:
         assert RiskLevel.HIGH.value == "HIGH"
         assert RiskLevel.MEDIUM.value == "MEDIUM"
         assert RiskLevel.LOW.value == "LOW"
+
+
+# ─────────────────────────────────────────────
+# SEC Retriever Tests
+# ─────────────────────────────────────────────
+
+class TestSECRetriever:
+    @pytest.mark.asyncio
+    async def test_sec_cik_lookup(self):
+        from agent_financial_analyst.tools.sec_retrieval import SECRetriever
+        cik = await SECRetriever._get_cik("AAPL")
+        assert cik == "0000320193"
+
+    @pytest.mark.asyncio
+    async def test_sec_get_latest_filings(self):
+        from agent_financial_analyst.tools.sec_retrieval import SECRetriever
+        retriever = SECRetriever()
+        filings = await retriever.get_latest_filings("AAPL", count=1)
+        assert len(filings) == 1
+        assert filings[0]["type"] in ("10-K", "10-Q")
+        assert "sec.gov" in filings[0]["url"]
+

@@ -59,14 +59,32 @@ class ResearchOrchestrator:
         data_state = await self.market_agent.fetch(ticker)
         data_context = data_state.model_dump_json() # Use JSON for structured passing
         
-        # 2. Triple-Analyst Deep Dive (Parallel)
+        # Determine dynamic routing (crypto, indices, and ETFs typically skip SEC/Fundamentals)
+        sector = data_state.metadata.sector
+        is_equity = sector not in ("N/A", "", None, "None") and "-" not in ticker and "^" not in ticker
+        
+        # 2. Triple-Analyst Deep Dive (Parallel / Router)
         logger.info("🔍 PHASE 2: Concurrent multi-specialist deep dive")
         
-        analyst_tasks = [
-            self.fundamental_agent.analyze(ticker, data_context),
-            self.technical_agent.analyze(ticker, data_context),
-            self.doc_agent.analyze_filings(ticker)
-        ]
+        async def skip_fundamental():
+            return "Fundamental analysis skipped: Ticker does not represent a standard SEC-reporting equity security."
+
+        async def skip_document():
+            return "SEC document analysis skipped: Ticker does not represent a standard SEC-reporting equity security."
+
+        analyst_tasks = []
+        
+        if is_equity:
+            analyst_tasks.append(self.fundamental_agent.analyze(ticker, data_context))
+        else:
+            analyst_tasks.append(skip_fundamental())
+            
+        analyst_tasks.append(self.technical_agent.analyze(ticker, data_context))
+        
+        if is_equity:
+            analyst_tasks.append(self.doc_agent.analyze_filings(ticker))
+        else:
+            analyst_tasks.append(skip_document())
         
         # Expert Pattern: gather with return_exceptions to prevent cascading failure
         results = await asyncio.gather(*analyst_tasks, return_exceptions=True)
@@ -81,7 +99,7 @@ class ResearchOrchestrator:
         # 3. Risk Intelligence
         logger.info("⚠️ PHASE 3: Multi-factor risk mapping")
         risks = await self.risk_agent.analyze(ticker, data_context)
-        risk_text = "\n".join([f"- [{r.level}] {r.title}: {r.description}" for r in risks])
+        risk_text = "\n".join([f"- [{r.level.value if hasattr(r.level, 'value') else r.level}] {r.title}: {r.description}" for r in risks])
         
         # 4. Peer Review & Critique Loop
         logger.info("⚖️ PHASE 4: Institutional critique and bias check")
@@ -95,13 +113,24 @@ class ResearchOrchestrator:
         
         # 5. Executive Synthesis
         logger.info("📑 PHASE 5: Synthesis of final investment thesis")
-        final_context = f"{draft_body}\n\nMANAGEMENT CRITIQUE:\n{critique}"
-        
         exec_summary, build_conclusion = await self.synthesis_agent.summarize(
             ticker, fundamental, technical, f"{risk_text}\n\nREVIEWR NOTES:\n{critique}"
         )
         
         total_ms = (time.perf_counter() - start_t) * 1000
+        
+        # Gather all traces and sum costs
+        agents = [
+            self.market_agent,
+            self.fundamental_agent,
+            self.technical_agent,
+            self.doc_agent,
+            self.risk_agent,
+            self.reviewer_agent,
+            self.synthesis_agent
+        ]
+        agent_traces = [a.last_output for a in agents if a.last_output is not None]
+        total_cost = sum(t.cost_usd for t in agent_traces)
         
         # Construction of the institutional report
         return ResearchReport(
@@ -109,13 +138,13 @@ class ResearchOrchestrator:
             ticker=ticker.upper(),
             created_at=datetime.utcnow(),
             executive_summary=exec_summary,
-            company_context=data_state.metadata.description,
+            company_context=data_state.metadata.description or "",
             fundamental_analysis=fundamental,
             technical_analysis=technical,
             risk_assessment=risks,
             conclusion=build_conclusion,
             data_snapshot=data_state,
-            agent_traces=[], # Would be populated per agent in prod
+            agent_traces=agent_traces,
             total_latency_ms=total_ms,
-            total_cost_usd=0.25 # Mocked sum for demo
+            total_cost_usd=total_cost or 0.25
         )

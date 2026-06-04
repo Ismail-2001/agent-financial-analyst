@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -103,6 +104,22 @@ class AgentOutput(BaseModel):
     tokens_completion: int
     cost_usd: float = 0.0
 
+    @property
+    def agent_name(self) -> str:
+        return self.agent_id.replace("_", " ").title()
+
+    @property
+    def error(self) -> Optional[str]:
+        return self.metadata.get("error")
+
+    @property
+    def latency_seconds(self) -> float:
+        return self.latency_ms / 1000.0
+
+    @property
+    def tokens(self) -> int:
+        return self.tokens_prompt + self.tokens_completion
+
 
 class RiskFactor(BaseModel):
     """A specific risk identified by the Risk Agent."""
@@ -133,6 +150,83 @@ class ResearchReport(BaseModel):
     total_cost_usd: float
 
     @property
+    def agent_outputs(self) -> List[AgentOutput]:
+        return self.agent_traces
+
+    @property
+    def total_latency_seconds(self) -> float:
+        return self.total_latency_ms / 1000.0
+
+    @property
     def summary_markdown(self) -> str:
         """Render a concise summary of the report."""
         return f"# {self.ticker} Analysis\n\n{self.executive_summary}"
+
+    @property
+    def markdown(self) -> str:
+        """Render the full report as Markdown."""
+        date_str = self.created_at.strftime("%Y-%m-%d")
+        sections = [
+            f"# {self.ticker} — Equity Research Report",
+            f"*Generated {date_str} by agent-financial-analyst*",
+            "",
+            f"## Executive Summary\n{self.executive_summary}",
+        ]
+
+        if self.company_context:
+            sections.append(f"\n## Company Overview\n{self.company_context}")
+        if self.fundamental_analysis:
+            sections.append(f"\n## Fundamental Analysis\n{self.fundamental_analysis}")
+        if self.technical_analysis:
+            sections.append(f"\n## Technical Analysis\n{self.technical_analysis}")
+        if self.risk_assessment:
+            risk_text = "\n".join([f"- **{r.category}** ({r.level.value}): {r.description}" for r in self.risk_assessment])
+            sections.append(f"\n## Risk Assessment\n{risk_text}")
+        if self.conclusion:
+            sections.append(f"\n## Conclusion\n{self.conclusion}")
+
+        sections.append(
+            f"\n---\n*Report generated in {self.total_latency_seconds:.1f}s "
+            f"| Cost: ${self.total_cost_usd:.3f} "
+            f"| Disclaimer: This is AI-generated analysis for educational "
+            f"purposes only. Not financial advice.*"
+        )
+        return "\n".join(sections)
+
+    def save(self, output_dir: str = "reports") -> Path:
+        """Save the report as a Markdown file."""
+        path = Path(output_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        filepath = path / f"{self.ticker}_report.md"
+        filepath.write_text(self.markdown)
+        return filepath
+
+    def to_dict(self) -> dict:
+        """Compatibility dict converter."""
+        date_str = self.created_at.strftime("%Y-%m-%d")
+        return {
+            "ticker": self.ticker,
+            "date": date_str,
+            "sections": {
+                "executive_summary": self.executive_summary,
+                "company_overview": self.company_context,
+                "fundamental_analysis": self.fundamental_analysis,
+                "technical_analysis": self.technical_analysis,
+                "risk_assessment": "\n".join([f"- **{r.category}** ({r.level.value}): {r.description}" for r in self.risk_assessment]),
+                "conclusion": self.conclusion,
+            },
+            "meta": {
+                "total_latency_s": round(self.total_latency_seconds, 1),
+                "total_cost_usd": round(self.total_cost_usd, 4),
+                "agents": [
+                    {
+                        "name": a.agent_name,
+                        "latency_s": round(a.latency_seconds, 1),
+                        "tokens": a.tokens,
+                        "error": a.error,
+                    }
+                    for a in self.agent_outputs
+                ],
+            },
+        }
+
